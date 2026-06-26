@@ -1,0 +1,62 @@
+[package]
+name = "pick"
+version = "0.1.0"
+edition = "2021"
+description = "Screen color picker — system tray daemon, ALT to activate"
+authors = []
+
+[dependencies]
+# CLI arg parsing
+clap = { version = "4", features = ["derive"] }
+
+# Error handling
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Config & serialization
+serde = { version = "1", features = ["derive"] }
+toml = "1.1"
+directories = "6"
+
+# Event loop foundation (used now for daemon, later for overlay)
+winit = "0.30"
+
+# System tray
+tray-icon = "0.24"
+muda = "0.19"
+
+# Cross-thread communication
+crossbeam-channel = "0.5"
+
+# Color
+palette = "0.7"
+
+# Clipboard
+arboard = "3.6"
+
+# Windows-specific
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
+
+# macOS-specific
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = "0.3"
+objc2-core-graphics = "0.3"
+
+# Linux-specific
+[target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]
+x11rb = { version = "0.13", features = ["shm"] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+opt-level = 3
+strip = true
