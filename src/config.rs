@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+use crate::color::Color;
 use crate::error::{AppError, Result};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -11,6 +12,16 @@ pub enum Format {
     Hex,
     Rgb,
     Hsl,
+}
+
+impl Format {
+    pub fn format_color(&self, color: &Color) -> String {
+        match self {
+            Format::Hex => color.to_hex(),
+            Format::Rgb => color.to_rgb_string(),
+            Format::Hsl => color.to_hsl_string(),
+        }
+    }
 }
 
 impl Default for Format {

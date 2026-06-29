@@ -5,12 +5,15 @@ mod config;
 mod daemon;
 mod error;
 mod hotkey;
+mod overlay;
+mod renderer;
+mod xkcd_data;
 
 use clap::Parser;
 use color::PixelAnalyzer;
 use error::{AppError, Result};
 
-/// Screen color picker — press ALT to capture pixel color under cursor.
+/// Screen color picker — press Ctrl to capture pixel color under cursor.
 #[derive(Parser)]
 #[command(name = "pick", version, about)]
 struct Cli {
@@ -40,11 +43,12 @@ fn main() -> Result<()> {
 }
 
 fn run_once() -> Result<()> {
+    let cfg = config::Config::load();
     let capturer = capture::create_capturer()?;
     let (x, y) = cursor_pos()?;
     let buf = capturer.grab_region(x - 48, y - 48, 96, 96)?;
     let color = PixelAnalyzer::sample_center(&buf, 96, 96);
-    println!("{}  {}", color.to_hex(), color.name());
+    println!("{}  {}", cfg.default_format.format_color(&color), color.name());
     Ok(())
 }
 

@@ -5,30 +5,42 @@ use std::time::Duration;
 use crossbeam_channel::bounded;
 use tray_icon::menu::{Menu, MenuEvent, MenuItem};
 use tray_icon::{Icon, TrayIconBuilder, TrayIconEvent};
+use winit::dpi::LogicalSize;
 use winit::event::{Event, WindowEvent};
 use winit::event_loop::{ControlFlow, EventLoop};
-use winit::window::WindowAttributes;
+use winit::window::{Window, WindowAttributes, WindowLevel};
 
 use crate::capture;
-use crate::color::PixelAnalyzer;
+use crate::clipboard;
+use crate::color::{Color, PixelAnalyzer};
 use crate::config::Config;
 use crate::error::{AppError, Result};
 use crate::hotkey;
+use crate::overlay;
+use crate::renderer;
 
 struct CaptureFrame {
     buf: Vec<u8>,
 }
 
-pub fn run_daemon(_config: Config) -> Result<()> {
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum State {
+    Idle,
+    Active,
+}
+
+pub fn run_daemon(config: Config) -> Result<()> {
     let event_loop = EventLoop::new().map_err(|e| AppError::Other(format!("EventLoop: {e}")))?;
 
-    // Hidden window keeps winit's event loop running on all platforms
+    // Hidden window required by winit on some platforms for event delivery
     #[allow(deprecated)]
-    let _window = event_loop.create_window(
+    let _hidden = event_loop.create_window(
         WindowAttributes::default()
             .with_visible(false)
             .with_title("pick"),
     ).map_err(|e| AppError::Other(format!("Hidden window: {e}")))?;
+
+    let format = config.default_format;
 
     // --- System tray ---
     let quit_item = MenuItem::with_id("quit", "Quit", true, None);
@@ -39,7 +51,7 @@ pub fn run_daemon(_config: Config) -> Result<()> {
     menu.append(&quit_item)
         .map_err(|e| AppError::Other(format!("Menu: {e}")))?;
 
-    let _tray = TrayIconBuilder::new()
+    let tray = TrayIconBuilder::new()
         .with_tooltip("pick")
         .with_icon(load_tray_icon())
         .with_menu(Box::new(menu))
@@ -52,13 +64,13 @@ pub fn run_daemon(_config: Config) -> Result<()> {
     // --- Background capture thread ---
     let capturer = capture::create_capturer()?;
     let (capture_tx, capture_rx) = bounded::<CaptureFrame>(2);
-    let alt_state = Arc::new(AtomicBool::new(false));
-    let alt_clone = alt_state.clone();
+    let ctrl_state = Arc::new(AtomicBool::new(false));
+    let ctrl_clone = ctrl_state.clone();
 
     std::thread::spawn(move || {
         loop {
-            let held = hotkey::is_alt_held();
-            alt_clone.store(held, Ordering::Relaxed);
+            let held = hotkey::is_ctrl_held();
+            ctrl_clone.store(held, Ordering::Relaxed);
 
             if held {
                 let (x, y) = cursor_pos();
@@ -71,8 +83,12 @@ pub fn run_daemon(_config: Config) -> Result<()> {
         }
     });
 
-    // --- Event loop ---
-    let mut was_held = false;
+    // --- Event loop state ---
+    let mut state = State::Idle;
+    let mut last_color: Option<Color> = None;
+    let mut clipboard = clipboard::Clipboard::new().ok();
+    let mut overlay_win: Option<Window> = None;
+    let mut renderer = renderer::Renderer::new();
 
     #[allow(deprecated)]
     event_loop.run(move |event, elwt| {
@@ -80,41 +96,140 @@ pub fn run_daemon(_config: Config) -> Result<()> {
 
         match event {
             Event::AboutToWait => {
-                let is_held = alt_state.load(Ordering::Relaxed);
+                let is_held = ctrl_state.load(Ordering::Relaxed);
 
-                if is_held && !was_held {
-                    tracing::info!("ALT pressed — capturing");
-                }
-                if !is_held && was_held {
-                    tracing::info!("ALT released");
-                }
-                was_held = is_held;
+                // --- State transitions with overlay management ---
+                match (state, is_held) {
+                    (State::Idle, true) => {
+                        state = State::Active;
+                        last_color = None;
 
-                if is_held {
-                    if let Ok(frame) = capture_rx.try_recv() {
+                        // Create overlay window on first activation
+                        if overlay_win.is_none() {
+                            let attrs = WindowAttributes::default()
+                                .with_title("pick overlay")
+                                .with_decorations(false)
+                                .with_visible(false)
+                                .with_transparent(false)
+                                .with_window_level(WindowLevel::AlwaysOnTop)
+                                .with_resizable(false)
+                                .with_inner_size(LogicalSize::new(
+                                    overlay::OVERLAY_W as f64,
+                                    overlay::OVERLAY_H as f64,
+                                ))
+                                .with_enabled_buttons(
+                                    winit::window::WindowButtons::CLOSE
+                                    | winit::window::WindowButtons::MINIMIZE
+                                    | winit::window::WindowButtons::MAXIMIZE,
+                                );
+                            match elwt.create_window(attrs) {
+                                Ok(w) => {
+                                    overlay::apply_platform_styles(&w);
+                                    overlay::apply_rounded_corners(&w);
+                                    overlay_win = Some(w);
+                                }
+                                Err(e) => {
+                                    tracing::error!("overlay window: {e}");
+                                }
+                            }
+                        }
+                        if let Some(ref w) = overlay_win {
+                            let _ = w.set_visible(true);
+                        }
+                        tracing::info!("Ctrl pressed — picker active");
+                    }
+                    (State::Active, false) => {
+                        state = State::Idle;
+                        if let Some(ref w) = overlay_win {
+                            let _ = w.set_visible(false);
+                        }
+                        // Copy last captured color on release
+                        if let Some(color) = last_color {
+                            let text = format.format_color(&color);
+                            if let Some(ref mut cb) = clipboard {
+                                let _ = cb.copy_text(&text);
+                                let _ = tray.set_tooltip(Some(format!("pick — {}", text)));
+                                tracing::info!(color = %text, name = %color.name(), "Ctrl released — copied");
+                            }
+                        } else {
+                            tracing::info!("Ctrl released — no color captured");
+                        }
+                    }
+                    _ => {}
+                }
+
+                // --- Reposition overlay while active ---
+                if state == State::Active {
+                    if let Some(ref w) = overlay_win {
+                        let (cx, cy) = cursor_pos();
+                        overlay::position_near_cursor(w, cx, cy);
+                        w.request_redraw();
+                    }
+
+                    // Drain capture frames
+                    while let Ok(frame) = capture_rx.try_recv() {
                         let color = PixelAnalyzer::sample_center(&frame.buf, 96, 96);
-                        tracing::info!(
-                            hex = %color.to_hex(),
-                            rgb = %color.to_rgb_string(),
-                            hsl = %color.to_hsl_string(),
-                            name = %color.name(),
-                            "picked"
-                        );
+                        tracing::debug!(hex = %color.to_hex(), name = %color.name(), "tracking");
+                        last_color = Some(color);
+                        renderer.update_capture(&frame.buf);
                     }
                 }
 
-                // Process tray events
+                // --- Process tray clicks (pick without holding Ctrl) ---
                 while let Ok(tray_event) = tray_rx.try_recv() {
                     if let TrayIconEvent::Click { .. } = tray_event {
-                        tracing::debug!("tray click");
+                        if let Ok(capturer) = capture::create_capturer() {
+                            let (x, y) = cursor_pos();
+                            if let Ok(buf) = capturer.grab_region(x - 48, y - 48, 96, 96) {
+                                let color = PixelAnalyzer::sample_center(&buf, 96, 96);
+                                let text = format.format_color(&color);
+                                if let Some(ref mut cb) = clipboard {
+                                    let _ = cb.copy_text(&text);
+                                    let _ = tray.set_tooltip(Some(format!("pick — {}", text)));
+                                }
+                                tracing::info!(color = %text, name = %color.name(), "tray pick");
+                            }
+                        }
                     }
                 }
 
-                // Process menu events
+                // --- Process menu events ---
                 while let Ok(menu_event) = menu_rx.try_recv() {
-                    if menu_event.id() == quit_item.id() {
-                        tracing::info!("Quit requested");
-                        elwt.exit();
+                    match menu_event.id() {
+                        id if id == quit_item.id() => {
+                            tracing::info!("Quit requested");
+                            elwt.exit();
+                        }
+                        id if id == settings_item.id() => {
+                            let path = Config::config_path()
+                                .unwrap_or_else(|_| {
+                                    let mut p = std::path::PathBuf::from(
+                                        std::env::var("USERPROFILE")
+                                            .unwrap_or_else(|_| ".".into()),
+                                    );
+                                    p.push(".config");
+                                    p.push("pick");
+                                    p.push("config.toml");
+                                    p
+                                });
+                            tracing::info!(config = %path.display(), "Settings — config file");
+                            let _ = open::that(path);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::RedrawRequested,
+            } => {
+                if let Some(ref w) = overlay_win {
+                    if w.id() == window_id {
+                        if let Some(color) = last_color {
+                            let name = color.name();
+                            renderer.paint(w, color, name);
+                        }
                     }
                 }
             }

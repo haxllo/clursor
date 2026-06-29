@@ -2,7 +2,7 @@
 name = "pick"
 version = "0.1.0"
 edition = "2021"
-description = "Screen color picker — system tray daemon, ALT to activate"
+description = "Screen color picker — system tray daemon, Ctrl to activate"
 authors = []
 
 [dependencies]
@@ -37,11 +37,15 @@ palette = "0.7"
 # Clipboard
 arboard = "3.6"
 
+# Open files/URLs in default app
+open = "5.3"
+
 # Windows-specific
 [target.'cfg(target_os = "windows")'.dependencies]
 windows-sys = { version = "0.61.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
+    "Win32_UI_Controls",
     "Win32_UI_WindowsAndMessaging",
 ] }
 

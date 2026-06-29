@@ -1,7 +1,7 @@
 # M1: Daemon Core + Screen Capture Plan
 
 ## Goal
-System tray daemon running in background. `pick --once` prints hex under cursor. `pick` (no args) starts daemon → ALT key → logs pixel color.
+System tray daemon running in background. `pick --once` prints hex under cursor. `pick` (no args) starts daemon → Ctrl key → shows overlay with pixel color.
 
 ## Crate Versions (Latest as of June 2026)
 
@@ -36,7 +36,7 @@ src/
 │   ├── macos.rs         # CGDisplay impl (stub for now on Windows)
 │   └── linux.rs         # XShmGetImage impl (stub for now)
 ├── color.rs             # Color {r,g,b,a}, PixelAnalyzer, format as hex/rgb/hsl
-├── hotkey.rs            # Platform::is_alt_held()
+├── hotkey.rs            # Platform::is_ctrl_held()
 ├── daemon.rs            # System tray + background poll loop + state machine
 ├── config.rs            # Config struct, load/save TOML
 ├── clipboard.rs         # arboard wrapper
@@ -65,16 +65,16 @@ src/
 - Test: run binary, verify output
 
 ### Step 4: hotkey module
-- `hotkey.rs`: platform-specific ALT key detection
-- Windows: `GetAsyncKeyState(VK_MENU) & 0x8000 != 0`
+- `hotkey.rs`: platform-specific Ctrl key detection
+- Windows: `GetAsyncKeyState(VK_CONTROL) & 0x8000 != 0`
 - macOS: CGEventTap (stub for now)
 - Linux: XQueryKeymap (stub for now)
 
 ### Step 5: daemon mode + system tray
-- `daemon.rs`: background thread polling ALT at 250Hz
-- On ALT press: capture pixel, log with tracing
+- `daemon.rs`: background thread polling Ctrl at 250Hz
+- On Ctrl press: show overlay with pixel color
 - System tray icon via tray-icon crate
-- Tray context menu: "Pick Color" (simulate ALT), "Settings" (stub), "Quit"
+- Tray context menu: "Pick Color" (simulate Ctrl), "Settings" (stub), "Quit"
 - daemon.run() is the main entry point when no --once flag
 
 ## Key Decisions for M1
@@ -83,7 +83,7 @@ src/
 |---|---|---|
 | Platform first | Windows | We're on Windows. Mac/Linux stubs for now |
 | Capture region | 96×96 pixels | Small enough for <1ms capture, large enough for zoom loupe (M3) |
-| ALT polling rate | 250Hz (4ms) | Responsive enough for human interaction, low CPU |
+| Ctrl polling rate | 250Hz (4ms) | Responsive enough for human interaction, low CPU |
 | Tray icon | Generated programmatically (colored circle) | No external asset files needed |
 | Config path | XDG_CONFIG_HOME/pick/config.toml | Standard cross-platform convention |
 | Error handling | thiserror + color-eyre | From day one, no unwrap on OS calls |
