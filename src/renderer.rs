@@ -113,16 +113,16 @@ impl Renderer {
         SelectObject(hdc, old);
         DeleteObject(pen);
 
-        // Highlight center pixel box border — white 2px
+        // Center pixel highlight — 1px white border
         let center = LOUPE_SRC / 2;
         let hx = LOUPE_X + center * ZOOM;
         let hy = LOUPE_Y + center * ZOOM;
-        let hpen = CreatePen(PS_SOLID, 2, gdi_color(255, 255, 255));
+        let hpen = CreatePen(PS_SOLID, 1, gdi_color(255, 255, 255));
         let hold = SelectObject(hdc, hpen as _);
         MoveToEx(hdc, hx, hy, std::ptr::null_mut());
-        LineTo(hdc, hx + ZOOM, hy);
-        LineTo(hdc, hx + ZOOM, hy + ZOOM);
-        LineTo(hdc, hx, hy + ZOOM);
+        LineTo(hdc, hx + ZOOM - 1, hy);
+        LineTo(hdc, hx + ZOOM - 1, hy + ZOOM - 1);
+        LineTo(hdc, hx, hy + ZOOM - 1);
         LineTo(hdc, hx, hy);
         SelectObject(hdc, hold);
         DeleteObject(hpen);
