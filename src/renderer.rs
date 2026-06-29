@@ -15,15 +15,15 @@ use crate::overlay::{OVERLAY_H, OVERLAY_W};
 
 // Layout — 280×190 window
 const PAD: i32 = 12;
-const LOUPE_DST: i32 = 84;
-const LOUPE_SRC: i32 = 14;
-const ZOOM: i32 = 6;
+const LOUPE_DST: i32 = 90;
+const LOUPE_SRC: i32 = 5;
+const ZOOM: i32 = 18;
 const LOUPE_X: i32 = PAD;
 const LOUPE_Y: i32 = 14;
 const TEXT_X: i32 = LOUPE_X + LOUPE_DST + 14;
-const SWATCH_Y: i32 = 106;
+const SWATCH_Y: i32 = LOUPE_Y + LOUPE_DST + PAD;
 const SWATCH_H: i32 = 20;
-const DIVIDER_Y: i32 = 134;
+
 
 fn gdi_color(r: u8, g: u8, b: u8) -> u32 {
     (b as u32) << 16 | (g as u32) << 8 | (r as u32)
@@ -62,7 +62,6 @@ impl Renderer {
             self.render_loupe(mem);
             self.render_grid(mem);
             self.render_swatch(mem, color);
-            self.render_divider(mem);
             self.render_text(mem, color, name);
             SetROP2(mem, saved_rop);
 
@@ -157,15 +156,6 @@ impl Renderer {
             4, 4);
         SelectObject(hdc, old_brush);
         SelectObject(hdc, old_pen);
-        DeleteObject(pen);
-    }
-
-    unsafe fn render_divider(&self, hdc: *mut c_void) {
-        let pen = CreatePen(PS_SOLID, 1, gdi_color(50, 50, 70));
-        let old = SelectObject(hdc, pen as _);
-        MoveToEx(hdc, PAD, DIVIDER_Y, std::ptr::null_mut());
-        LineTo(hdc, OVERLAY_W - PAD, DIVIDER_Y);
-        SelectObject(hdc, old);
         DeleteObject(pen);
     }
 

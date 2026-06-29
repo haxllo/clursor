@@ -1,7 +1,7 @@
 use winit::window::Window;
 
 pub const OVERLAY_W: i32 = 280;
-pub const OVERLAY_H: i32 = 190;
+pub const OVERLAY_H: i32 = 148;
 pub const CURSOR_OFFSET: i32 = 12;
 
 pub fn position_near_cursor(window: &Window, cursor_x: i32, cursor_y: i32) {
