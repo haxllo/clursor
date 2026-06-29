@@ -6,8 +6,8 @@ use windows_sys::Win32::Graphics::Gdi::{
     CreateSolidBrush, DeleteDC,
     DeleteObject, FillRect, GetDC, GetStockObject, LineTo, MoveToEx, ReleaseDC, RoundRect,
     SelectObject, SetBkMode, SetROP2, SetTextColor, StretchDIBits, TextOutW,
-    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, PS_SOLID, R2_COPYPEN, R2_NOT,
-    SRCCOPY, TRANSPARENT,
+    BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, PS_SOLID, R2_COPYPEN, SRCCOPY,
+    TRANSPARENT,
 };
 
 use crate::color::Color;
@@ -113,26 +113,19 @@ impl Renderer {
         SelectObject(hdc, old);
         DeleteObject(pen);
 
-        // Crosshair — gap-center, negative (inverts pixels for visibility)
-        let cx = LOUPE_X + LOUPE_DST / 2;
-        let cy = LOUPE_Y + LOUPE_DST / 2;
-        let gap = 4;
-        let arm = 10;
-
-        let prev_rop = SetROP2(hdc, R2_NOT);
-        let c = CreatePen(PS_SOLID, 1, 0);
-        let o2 = SelectObject(hdc, c as _);
-        MoveToEx(hdc, cx - gap - arm, cy, std::ptr::null_mut());
-        LineTo(hdc, cx - gap, cy);
-        MoveToEx(hdc, cx + gap, cy, std::ptr::null_mut());
-        LineTo(hdc, cx + gap + arm, cy);
-        MoveToEx(hdc, cx, cy - gap - arm, std::ptr::null_mut());
-        LineTo(hdc, cx, cy - gap);
-        MoveToEx(hdc, cx, cy + gap, std::ptr::null_mut());
-        LineTo(hdc, cx, cy + gap + arm);
-        SelectObject(hdc, o2);
-        DeleteObject(c);
-        SetROP2(hdc, prev_rop);
+        // Highlight center pixel box border — white 2px
+        let center = LOUPE_SRC / 2;
+        let hx = LOUPE_X + center * ZOOM;
+        let hy = LOUPE_Y + center * ZOOM;
+        let hpen = CreatePen(PS_SOLID, 2, gdi_color(255, 255, 255));
+        let hold = SelectObject(hdc, hpen as _);
+        MoveToEx(hdc, hx, hy, std::ptr::null_mut());
+        LineTo(hdc, hx + ZOOM, hy);
+        LineTo(hdc, hx + ZOOM, hy + ZOOM);
+        LineTo(hdc, hx, hy + ZOOM);
+        LineTo(hdc, hx, hy);
+        SelectObject(hdc, hold);
+        DeleteObject(hpen);
     }
 
     unsafe fn render_swatch(&self, hdc: *mut c_void, color: Color) {

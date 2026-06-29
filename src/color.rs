@@ -63,7 +63,7 @@ pub struct PixelAnalyzer;
 impl PixelAnalyzer {
     pub fn sample_center(buf: &[u8], width: u32, height: u32) -> Color {
         let cx = (width / 2) as usize;
-        let cy = (height / 2) as usize;
+        let cy = (height / 2 - 1) as usize;
         let idx = (cy * width as usize + cx) * 4;
         Color::new(buf[idx], buf[idx + 1], buf[idx + 2])
     }

@@ -74,7 +74,7 @@ pub fn run_daemon(config: Config) -> Result<()> {
 
             if held {
                 let (x, y) = cursor_pos();
-                            if let Ok(buf) = capturer.grab_region(x - 48, y - 48 - 1, 96, 96) {
+                            if let Ok(buf) = capturer.grab_region(x - 48, y - 48, 96, 96) {
                     let _ = capture_tx.send(CaptureFrame { buf });
                 }
             }
@@ -180,7 +180,7 @@ pub fn run_daemon(config: Config) -> Result<()> {
                     if let TrayIconEvent::Click { .. } = tray_event {
                         if let Ok(capturer) = capture::create_capturer() {
                             let (x, y) = cursor_pos();
-                if let Ok(buf) = capturer.grab_region(x - 48, y - 48 - 1, 96, 96) {
+                            if let Ok(buf) = capturer.grab_region(x - 48, y - 48, 96, 96) {
                                 let color = PixelAnalyzer::sample_center(&buf, 96, 96);
                                 let text = format.format_color(&color);
                                 if let Some(ref mut cb) = clipboard {
